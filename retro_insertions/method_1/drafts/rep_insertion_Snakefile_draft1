@@ -1,0 +1,136 @@
+
+import os
+import regex as re
+import glob2 as glob
+
+exp_name = 'hgsoc_repeats'
+
+home_dir = '/g/data1a/ku3/jt3341/'
+project_dir = home_dir + 'projects/' + exp_name + '/genome/'
+genome_dir = '/g/data1a/ku3/jt3341/genomes/hg19_ercc/'
+in_dir = project_dir + 'results/bwa/'
+mdss_dir = 'jt3341/projects/hgsoc_repeats/genome/raw_files/bowtell'
+
+#SAMPLES = [ re.sub('\\.bam.prompt', '', os.path.basename(x)) for x in list(glob.glob(in_dir + '*.bam.prompt')) ]
+
+#SAMPLES=[]
+#with open(in_dir + 'sample_list.txt') as f:
+#    for line in f:
+#    	if '.gz' not in line:
+#    		SAMPLES.append(
+#    			re.sub(
+#    				'.bam', '',
+#    				re.sub(
+#    					'\n', '', line
+#    				)
+#    			)
+#    		)
+
+SAMPLES = [ 'AOCS-153-1-2' ]
+print(SAMPLES)
+
+
+# define/create directories:
+svaba_dir = 'results/svaba/'
+if not os.path.exists(project_dir + 'results/svaba/'):
+	os.makedirs(project_dir + 'results/svaba/')
+
+cnvnator_dir = 'results/cnvnator/'
+if not os.path.exists(project_dir + 'results/cnvnator/'):
+	os.makedirs(project_dir + 'results/cnvnator/')
+
+cnv_report_dir = cnvnator_dir + 'reports/'
+if not os.path.exists(cnvnator_dir + 'reports/'):
+	os.makedirs(cnvnator_dir + 'reports/')
+
+# determine outputs:
+rule all:
+	input:
+		expand(svaba_dir + '{sample}.discordant.txt', sample=SAMPLES),
+		expand(cnvnator_dir + '{sample}.out.root', sample=SAMPLES),
+		expand(cnv_report_dir + '{sample}_histogram_done', sample=SAMPLES),
+		expand(cnv_report_dir + '{sample}_stats_done', sample=SAMPLES),
+		expand(cnv_report_dir + '{sample}_partition_done', sample=SAMPLES),
+		expand(in_dir + '{sample}_removed', sample=SAMPLES)
+
+# specify rules:
+rule transfer:
+#	input:
+#		in_dir + '{sample}.bam.prompt'
+	output:
+		in_dir + '{sample}.bam'
+	shell:
+		'cd ' + in_dir + '; mdss get' + mdss_dir + '/{wildcards.sample}.bam'
+
+rule svaba:
+	input:
+		in_dir + '{sample}.bam'
+	output:
+		svaba_dir + '{sample}.discordant.txt'
+	threads: 8
+	shell:
+		'svaba run -t {input} -G ' + genome_dir + '/hg19_ercc.fa -a ' + 
+		svaba_dir + '/{wildcards.sample} -p 8'
+
+rule cnvnator_map:
+	input:
+		in_dir + '{sample}.bam'
+	output:
+		cnvnator_dir + '{sample}.out.root'
+	threads: 1
+	shell:
+		'cnvnator -genome hg19 -root {output} -chrom chr22 -tree {input}'
+
+rule cnvnator_hist:
+	input:
+		cnvnator_dir + '{sample}.out.root'
+	output:
+		cnv_report_dir + '{sample}_histogram_done'
+	threads: 8
+	shell:
+		'cnvnator -genome hg19 -root {input} {-chrom chr22 -his 90 -d ' + 
+		genome_dir + ' ; touch {output}'
+
+rule cnvnator_stats:
+	input:
+		cnvnator_dir + '{sample}.out.root'
+	output:
+		cnv_report_dir + '{sample}_stats_done'
+	threads: 8
+	shell:
+		'cnvnator -root {input} -chrom chr22 -stat 90; touch {output}'
+
+rule cnvnator_partition:
+	input:
+		cnvnator_dir + '{sample}.out.root'
+	output:
+		cnv_report_dir + '{sample}_partition_done'
+	threads: 8
+	shell:
+		'cnvnator -root {input} -chrom chr22 -partition 90; touch {output}'
+
+rule cnvnator_call:
+	input:
+		cnvnator_dir + '{sample}.out.root'
+	output:
+		cnvnator_dir + '{sample}_CNV_calls.txt'
+	threads: 8
+	shell:
+		'cnvnator -root {input} -chrom chr22 -call 90 >> {output}'
+
+rule remove_bam:
+	input:
+		cnvfile = cnvnator_dir + '{sample}_CNV_calls.txt',
+		bamfile = in_dir + '{sample}.bam'
+	output:
+		in_dir + '{sample}_removed'
+	shell:
+		'rm {input.bamfile}; touch {output}'
+
+
+
+
+
+
+
+

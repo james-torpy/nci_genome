@@ -1,0 +1,127 @@
+
+import os
+import regex as re
+import glob2 as glob
+
+exp_name = 'hgsoc_repeats'
+
+home_dir = '/g/data1a/ku3/jt3341/'
+project_dir = home_dir + 'projects/' + exp_name + '/genome/'
+genome_dir = '/g/data1a/ku3/jt3341/genomes/GRCh37/'
+in_dir = project_dir + 'results/bwa/test/'
+
+SAMPLE_file = open(project_dir + 'SAMPLES.txt', 'r')
+SAMPLES = SAMPLE_file.read()
+SAMPLES = SAMPLES.split('_')
+
+
+# define/create directories:
+svaba_dir = 'results/svaba/'
+if not os.path.exists(project_dir + 'results/svaba/'):
+	os.makedirs(project_dir + 'results/svaba/')
+
+cnvnator_dir = 'results/cnvnator/'
+if not os.path.exists(project_dir + 'results/cnvnator/'):
+	os.makedirs(project_dir + 'results/cnvnator/')
+
+cnv_report_dir = cnvnator_dir + 'reports/'
+if not os.path.exists(project_dir + 'results/cnvnator/reports/'):
+	os.makedirs(project_dir + 'results/cnvnator/reports/')
+
+# determine outputs:
+rule all:
+	input:
+		expand(in_dir + '{sample}.bam.bai', sample=SAMPLES),
+		expand(svaba_dir + '{sample}.discordant.txt.gz', sample=SAMPLES),
+		expand(cnv_report_dir + '{sample}_histogram_done', sample=SAMPLES),
+		expand(cnv_report_dir + '{sample}_stats_done', sample=SAMPLES),
+		expand(cnv_report_dir + '{sample}_partition_done', sample=SAMPLES),
+		expand(cnvnator_dir + '{sample}_CNV_calls.txt', sample=SAMPLES),
+		expand(in_dir + '{sample}_removed', sample=SAMPLES),
+		expand(in_dir + '{sample}_updated', sample=SAMPLES)
+
+# specify rules:
+rule index:
+	input:
+		in_dir + '{sample}.bam'
+	output:
+		in_dir + '{sample}.bam.bai'
+	shell:
+		'touch {output}'
+
+rule svaba:
+	input:
+		bam = in_dir + '{sample}.bam',
+		bai = in_dir + '{sample}.bam.bai'
+	output:
+		svaba_dir + '{sample}.discordant.txt.gz'
+	threads: 10
+	shell:
+		'touch {output}'
+
+rule cnvnator_map:
+	input:
+		in_dir + '{sample}.bam'
+	output:
+		cnvnator_dir + '{sample}.out.root'
+	threads: 1
+	shell:
+		'touch {output}'
+
+rule cnvnator_hist:
+	input:
+		cnvnator_dir + '{sample}.out.root'
+	output:
+		cnv_report_dir + '{sample}_histogram_done'
+	threads: 1
+	shell:
+		'touch {output}'
+
+rule cnvnator_stats:
+	input:
+		rootfile = cnvnator_dir + '{sample}.out.root',
+		hist_report = cnv_report_dir + '{sample}_histogram_done'
+	output:
+		cnv_report_dir + '{sample}_stats_done'
+	threads: 1
+	shell:
+		'touch {output}'
+
+rule cnvnator_partition:
+	input:
+		rootfile = cnvnator_dir + '{sample}.out.root',
+		stat_report = cnv_report_dir + '{sample}_stats_done'
+	output:
+		cnv_report_dir + '{sample}_partition_done'
+	threads: 1
+	shell:
+		'touch {output}'
+
+rule cnvnator_call:
+	input:
+		rootfile = cnvnator_dir + '{sample}.out.root',
+		par_report = cnv_report_dir + '{sample}_partition_done'
+	output:
+		cnvnator_dir + '{sample}_CNV_calls.txt'
+	threads: 1
+	shell:
+		'touch {output}'
+
+rule remove_bam:
+	input:
+		cnvfile = cnvnator_dir + '{sample}_CNV_calls.txt'
+	output:
+		report = in_dir + '{sample}_removed'
+	shell:
+		'rm ' + in_dir + '{wildcards.sample}.bam; rm ' + in_dir + 
+		'{wildcards.sample}.bam.bai; touch {output}'
+
+rule update_record:
+	input:
+		report = in_dir + '{sample}_removed'
+	output:
+		report = in_dir + '{sample}_updated'
+	shell:
+		'echo {wildcards.sample} >> ' + project_dir + 'test_done_list.txt; ' +
+		'touch {output}'
+
