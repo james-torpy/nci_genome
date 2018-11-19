@@ -4,12 +4,12 @@ script_dir="$project_dir/scripts"
 bam_dir="$project_dir/raw_files"
 
 
-for f in $bam_dir/*.bam
+for f in $bam_dir/*.bam.gz
 do
   
-  echo "md5-ing and gzipping $f..."
+  echo "MDSS-ing $f..."
   echo -e
 
-  qsub -v f=$f "$script_dir/gzip_bams.bash"
+  qsub -v f=$f "$script_dir/mdss_put_bams.bash"
 
 done

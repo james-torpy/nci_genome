@@ -1,0 +1,142 @@
+
+import os
+import regex as re
+import glob2 as glob
+
+exp_name = 'hgsoc_repeats'
+
+home_dir = '/g/data1a/ku3/jt3341/'
+project_dir = home_dir + 'projects/' + exp_name + '/genome/'
+in_dir = project_dir + 'results/bwa/'
+
+SAMPLE_file = open(project_dir + 'SAMPLES.txt', 'r')
+SAMPLES = SAMPLE_file.read()
+SAMPLES = SAMPLES.split('_')
+SAMPLES = [ re.sub('\n', '', s) for s in SAMPLES ]
+
+
+# define/create directories:
+genome_dir = 'refs/GRCh37/'
+
+svaba_dir = 'results/svaba/'
+if not os.path.exists(project_dir + 'results/svaba/'):
+	os.makedirs(project_dir + 'results/svaba/')
+
+cnvnator_dir = 'results/cnvnator/'
+if not os.path.exists(project_dir + 'results/cnvnator/'):
+	os.makedirs(project_dir + 'results/cnvnator/')
+
+cnv_report_dir = cnvnator_dir + 'reports/'
+if not os.path.exists(project_dir + 'results/cnvnator/reports/'):
+	os.makedirs(project_dir + 'results/cnvnator/reports/')
+
+# determine outputs:
+rule all:
+	input:
+		#expand(in_dir + '{sample}.bam.bai', sample=SAMPLES),
+		#expand(svaba_dir + '{sample}.discordant.txt.gz', sample=SAMPLES),
+		expand(in_dir + '{sample}_updated', sample=SAMPLES)
+
+# specify rules:
+#rule index:
+#	input:
+#		in_dir + '{sample}.bam'
+#	output:
+#		in_dir + '{sample}.bam.bai'
+#	shell:
+#		'samtools index {input}'
+#
+#rule svaba:
+#	input:
+#		bam = in_dir + '{sample}.bam',
+#		bai = in_dir + '{sample}.bam.bai'
+#	output:
+#		discords = svaba_dir + '{sample}.discordant.txt.gz',
+#		donefile = svaba_dir + '{sample}_done'
+#	threads: 8
+#	shell:
+#		'svaba run -t {input.bam} -G ' + genome_dir + 'GRCh37.fa -a ' + 
+#		svaba_dir + '{wildcards.sample} -p 8; touch {output.donefile}'
+
+rule cnvnator_map:
+	input:
+		in_dir + '{sample}.bam'
+	output:
+		cnvnator_dir + '{sample}.out.root'
+	threads: 1
+	shell:
+		'cnvnator -genome GRCh37 -root {output} -chrom chr1 chr2 ' + 
+		'chr3 chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 ' + 
+		'chr13 chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 ' + 
+		'chr22 chrX chrY -tree {input}'
+
+rule cnvnator_hist:
+	input:
+		cnvnator_dir + '{sample}.out.root'
+	output:
+		cnv_report_dir + '{sample}_histogram_done'
+	threads: 1
+	shell:
+		'cnvnator -genome GRCh37 -root {input} -chrom chr1 chr2 ' + 
+		'chr3 chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 ' + 
+		'chr13 chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 ' + 
+		'chr22 chrX chrY -his 100 -d ' + genome_dir + '; touch ' + 
+		'{output}'
+
+rule cnvnator_stats:
+	input:
+		rootfile = cnvnator_dir + '{sample}.out.root',
+		hist_report = cnv_report_dir + '{sample}_histogram_done'
+	output:
+		cnv_report_dir + '{sample}_stats_done'
+	threads: 1
+	shell:
+		'cnvnator -root {input.rootfile} -chrom chr1 chr2 chr3 ' + 
+		'chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 chr13 ' + 
+		'chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 chr22 ' + 
+		'chrX chrY -stat 100; touch {output}'
+
+rule cnvnator_partition:
+	input:
+		rootfile = cnvnator_dir + '{sample}.out.root',
+		stat_report = cnv_report_dir + '{sample}_stats_done'
+	output:
+		cnv_report_dir + '{sample}_partition_done'
+	threads: 1
+	shell:
+		'cnvnator -root {input.rootfile} -chrom chr1 chr2 chr3 ' + 
+		'chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 chr13 ' + 
+		'chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 chr22 ' + 
+		'chrX chrY -partition 100; touch {output}'
+
+rule cnvnator_call:
+	input:
+		rootfile = cnvnator_dir + '{sample}.out.root',
+		par_report = cnv_report_dir + '{sample}_partition_done'
+	output:
+		cnvnator_dir + '{sample}_CNV_calls.txt'
+	threads: 1
+	shell:
+		'cnvnator -root {input.rootfile} -chrom chr1 chr2 chr3 ' + 
+		'chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 chr13 ' +
+		'chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 chr22 ' +
+		'chrX chrY -call 100 >> {output}'
+
+rule remove_bam:
+	input:
+		#svabafile = svaba_dir + '{sample}.discordant.txt.gz',
+		cnvfile = cnvnator_dir + '{sample}_CNV_calls.txt'
+	output:
+		report = in_dir + '{sample}_removed'
+	shell:
+		'rm ' + in_dir + '{wildcards.sample}.bam; touch {output}'
+
+rule update_record:
+	input:
+		report = in_dir + '{sample}_removed'
+	output:
+		report = in_dir + '{sample}_updated'
+	shell:
+		'echo {wildcards.sample} >> ' + project_dir + 'done_list.txt; ' +
+		'touch {output}'
+

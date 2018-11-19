@@ -1,0 +1,266 @@
+#############################################################
+### 0. Set up variables and paths ###
+#############################################################
+import os
+import re
+import glob
+project_name = 'hgsoc_repeats'
+exp_name = 'genome'
+# define/create directories:
+home_dir = '/g/data1a/ku3/jt3341/'
+project_dir = home_dir + 'projects/' + project_name + '/' + exp_name + '/'
+results_dir = project_dir + 'results/'
+ref_dir = project_dir + 'refs/'
+
+bam_dir = 'raw_files/bams/'
+if not os.path.exists(project_dir + bam_dir):
+    os.makedirs(project_dir + '/' + bam_dir)
+
+temp_dir = project_dir + bam_dir + '/temp/'
+if not os.path.exists(temp_dir):
+    os.makedirs(temp_dir)
+
+check_dir = bam_dir + 'check/'
+if not os.path.exists(project_dir + check_dir):
+    os.makedirs(project_dir + '/' + check_dir)
+
+fq_dir = 'raw_files/fastq/'
+if not os.path.exists(project_dir + fq_dir):
+    os.makedirs(project_dir + '/' + fq_dir)
+
+ref_dir = 'refs/hg38_ercc/'
+
+bwa_dir = 'results/bwa/'
+if not os.path.exists(project_dir + bwa_dir):
+    os.makedirs(project_dir + '/' + bwa_dir)
+
+svaba_dir = 'results/svaba/'
+if not os.path.exists(project_dir + svaba_dir):
+    os.makedirs(project_dir + svaba_dir)
+
+manta_dir = 'results/manta/'
+if not os.path.exists(project_dir + manta_dir):
+    os.makedirs(project_dir + manta_dir)
+
+manta_bin = '/g/data1a/ku3/jt3341/local/lib/manta-1.1.1.centos5_x86_64/bin/'
+
+SAMPLES = [ os.path.basename(re.sub('-5.bam.gz', '', x)) for x in \
+    list(glob.glob(project_dir + bam_dir + '/*-5.bam.gz')) ]
+print(' '.join(SAMPLES))
+
+rule all:
+    input:
+        expand(svaba_dir + '{sample}.discordant.txt.gz', \
+            sample=SAMPLES),
+        expand(project_dir + manta_dir + '/{wildcards.sample}/' +
+            'results/variants/somaticSV.vcf.gz', sample=SAMPLES)
+
+
+#############################################################
+### 0. Gunzip and check bams ###
+#############################################################
+
+rule gunzip1:
+    input:
+        bam_dir + '{sample}-5.bam.gz'
+    output:
+        bam_dir + '{sample}-5.bam'
+    threads: 8
+    shell:
+        'pigz -d {input}'
+
+rule gunzip2:
+    input:
+        bam_dir + '{sample}-1.bam.gz'
+    output:
+        bam_dir + '{sample}-1.bam'
+    threads: 8
+    shell:
+        'pigz -d {input}'
+
+
+#############################################################
+### 1. Convert bams to fastqs ###
+#############################################################
+
+rule sort1:
+    input:
+        bam_dir + '{sample}-5.bam'
+    output:
+        bam_dir + '{sample}-5.namesorted.bam'
+    threads: 8
+    shell:
+        '/g/data1a/ku3/jt3341/local/lib/novocraft/novosort ' + 
+        '-c 7 -t ' + temp_dir + ' -n -o {output} {input}; ' +
+        'rm {input}'
+
+rule sort2:
+    input:
+        bam_dir + '{sample}-1.bam'
+    output:
+        bam_dir + '{sample}-1.namesorted.bam'
+    threads: 8
+    shell:
+        '/g/data1a/ku3/jt3341/local/lib/novocraft/novosort ' + 
+        '-c 7 -t ' + temp_dir + ' -n -o {output} {input}; ' +
+        'rm {input}'
+  
+rule bam2fastq1:
+    input:
+        bam_dir + '{sample}-5.namesorted.bam'
+    output:
+        fq1 = fq_dir + '{sample}-5-R1.fq.gz',
+        fq2 = fq_dir + '{sample}-5-R2.fq.gz'
+    threads: 1
+    shell:
+        'module load bedtools/2.26.0; ' +
+        'bedtools bamtofastq -i {input} ' + 
+        '-fq {output.fq1} -fq2 {output.fq2}'
+
+rule bam2fastq2:
+    input:
+        bam_dir + '{sample}-1.namesorted.bam'
+    output:
+        fq1 = fq_dir + '{sample}-1-R1.fq.gz',
+        fq2 = fq_dir + '{sample}-1-R2.fq.gz'
+    threads: 1
+    shell:
+        'module load bedtools/2.26.0; ' +
+        'bedtools bamtofastq -i {input} ' + 
+        '-fq {output.fq1} -fq2 {output.fq2}'
+
+rule gunzip3:
+    input:
+        infq1 = fq_dir + '{sample}-5-R1.fq',
+        infq2 = fq_dir + '{sample}-5-R2.fq'
+    output:
+        outfq1 = fq_dir + '{sample}-5-R1.fq.gz',
+        outfq2 = fq_dir + '{sample}-5-R2.fq.gz'
+    threads: 8
+    shell:
+        'pigz -d {input.infq1}; '
+        'pigz -d {input.infq2}'
+
+rule gunzip4:
+    input:
+        infq1 = fq_dir + '{sample}-1-R1.fq',
+        infq2 = fq_dir + '{sample}-1-R2.fq'
+    output:
+        outfq1 = fq_dir + '{sample}-1-R1.fq.gz',
+        outfq2 = fq_dir + '{sample}-1-R2.fq.gz'
+    threads: 8
+    shell:
+        'pigz -d {input.infq1}; '
+        'pigz -d {input.infq2}'
+
+
+#############################################################
+### 1. Map fastqs to hg38 and index bams ###
+#############################################################
+
+rule bwa_align1:
+    input:
+        fq1 = fq_dir + '{sample}-5-R1.fq.gz',
+        fq2 = fq_dir + '{sample}-5-R2.fq.gz',
+        ind = ref_dir + 'hg38_ercc.bwa.amb'
+    output:
+        bwa_dir + '{sample}-5.sam'
+    threads: 8
+    shell:
+        'bwa mem -t 8 ' + ref_dir + 
+            'hg38_ercc.bwa {input.fq1} {input.fq2}' + 
+            '> {output}; ' +
+            'rm {input.fq1} {input.fq2}'
+
+rule bwa_align2:
+    input:
+        fq1 = fq_dir + '{sample}-1-R1.fq.gz',
+        fq2 = fq_dir + '{sample}-1-R2.fq.gz',
+        ind = ref_dir + 'hg38_ercc.bwa.amb'
+    output:
+        bwa_dir + '{sample}-1.sam'
+    threads: 8
+    shell:
+        'bwa mem -t 8 ' + ref_dir + 
+            'hg38_ercc.bwa {input.fq1} {input.fq2}' + 
+            '> {output}; ' +
+            'rm {input.fq1} {input.fq2}'
+
+rule bam1:
+    input:
+        bwa_dir + '{sample}-5.sam'
+    output:
+        bwa_dir + '{sample}-5.unsorted.bam'
+    threads: 1
+    shell:
+        'samtools view -bh {input} > {output}; ' + 
+        'rm {input}'
+
+rule bam2:
+    input:
+        bwa_dir + '{sample}-1.sam'
+    output:
+        bwa_dir + '{sample}-1.unsorted.bam'
+    threads: 1
+    shell:
+        'samtools view -bh {input} > {output}; ' + 
+        'rm {input}'
+
+rule sort3:
+    input:
+        bwa_dir + '{sample}-5.unsorted.bam'
+    output:
+        bwa_dir + '{sample}-5.bam'
+    threads: 8
+    shell:
+        '/g/data1a/ku3/jt3341/local/lib/novocraft/novosort ' + 
+        '-c 7 -t ' + temp_dir + ' -o {output} {input}; ' +
+        'rm {input}'
+
+rule sort4:
+    input:
+        bwa_dir + '{sample}-1.unsorted.bam'
+    output:
+        bwa_dir + '{sample}-1.bam'
+    threads: 8
+    shell:
+        '/g/data1a/ku3/jt3341/local/lib/novocraft/novosort ' + 
+        '-c 7 -t ' + temp_dir + ' -o {output} {input}; ' +
+        'rm {input}'
+
+rule index1:
+    input:
+        bwa_dir + '{sample}-5.bam'
+    output:
+        bwa_dir + '{sample}-5.bam.bai'
+    threads: 1
+    shell:
+        'samtools index {input}'
+
+rule index2:
+    input:
+        bwa_dir + '{sample}-1.bam'
+    output:
+        bwa_dir + '{sample}-1.bam.bai'
+    threads: 1
+    shell:
+        'samtools index {input}'
+
+
+#############################################################
+### 4. Call variants ###
+#############################################################
+
+rule svaba:
+   input:
+       gbam = bwa_dir + '{sample}-5.bam',
+       gbai = bwa_dir + '{sample}-5.bam.bai',
+       sbam = bwa_dir + '{sample}-1.bam',
+       sbai = bwa_dir + '{sample}-1.bam.bai'
+   output:
+       svaba_dir + '{sample}.discordant.txt.gz'
+   threads: 8
+   shell:
+        'svaba run -t {input.sbam} -n {input.gbam} -G ' + 
+            project_dir + ref_dir + 'hg38_ercc.fa -a ' + 
+            svaba_dir + '{wildcards.sample} ' + '-p 8'
