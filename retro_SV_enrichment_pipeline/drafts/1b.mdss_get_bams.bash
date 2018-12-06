@@ -42,11 +42,7 @@ jorbz=( $(qstat -s | grep jt3341 | grep 2a.retro ) )
 if [ "$fileno" = 4 ] && [ -z ${jorbz+x} ]; then
 	echo "Initiating retrotransposon SV enrichment snakemake pipeline..."
 	echo -e
-	conda activate p3.6.3env
-	cd $project_dir
-	#snakemake -s $project_dir/retro_SV_enrichment_Snakefile --cores 16 -k
-	snakemake -s retro_SV_enrichment_Snakefile -k --cluster "qsub -P ku3 -q \
-	express -l ncpus=16 -l mem=128GB -l walltime=24:00:00" -j 16
+	qsub $script_dir/2a.retro_SV_enrichment_Snakefile_submit.bash
 fi
 
 

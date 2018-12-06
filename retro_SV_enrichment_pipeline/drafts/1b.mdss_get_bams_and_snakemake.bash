@@ -10,7 +10,7 @@
 
 mdss_dir="jt3341/projects/hgsoc_repeats/genome/raw_files/"
 
-project_dir="/g/data1a/ku3/jt3341/projects/hgsoc_repeats/genome/"
+project_dir="/g/data1a/ku3/jt3341/projects//hgsoc_repeats/genome/"
 script_dir="$project_dir/scripts/retro_SV_enrichment_pipeline/"
 bam_dir="$project_dir/raw_files/bams/"
 check_dir="$bam_dir/check/"
@@ -33,12 +33,15 @@ if [ -f $bam_dir/${f} ]; then
 	touch $check_dir/${f}.got
 fi
 
-# if all 2 files have been transferred, process using snakemake pipeline:
+# if all 4 files have been transferred, process using snakemake pipeline:
+wait
+
+# if all 4 files have been transferred, process using snakemake pipeline:
 fileno=$(ls $check_dir/*got | wc -l)
-if [ "$fileno" = 2 ]; then
+if [ "$fileno" = 4 ]; then
 	
 	echo "Calling snakemake calling script"
-	qsub $script_dir/1c.snakemake.bash
+	qsub 1c.snakemake.bash
 	
 fi
 

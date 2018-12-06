@@ -8,6 +8,5 @@
 #PBS -l other=gdata1a
 #PBS -l wd
 
-bwa index -p /g/data1a/ku3/jt3341/projects/hgsoc_repeats/genome/refs/hg38_ercc/hg38_ercc.bwa \
-/g/data1a/ku3/jt3341/projects/hgsoc_repeats/genome/refs/hg38_ercc/hg38_ercc.fa
+bwa index /g/data1a/ku3/jt3341/projects/hgsoc_repeats/genome/refs/hg38_ercc/hg38_ercc.fa
 
